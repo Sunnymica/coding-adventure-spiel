@@ -1,0 +1,263 @@
+// ... (Dein existierender JS-Code von Claude endet hier)
+// Das Ende des Skripts, das im originalen Code fehlte, um das Spiel zu vervollständigen.
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.3);
+            },
+            error: () => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.3);
+            }
+        };
+
+        // DATENSTRUKTUR DER SÄTZE
+        const games = {
+            mittelfeldHorror: {
+                id: 1,
+                maxRounds: 10,
+                sentences: [
+                    {
+                        incorrect: "Der Abteilungsleiter hat leider wegen des Termindrucks die Unterlagen gestern im Büro nicht unterschrieben.",
+                        correct: "Der Abteilungsleiter hat die Unterlagen gestern wegen des Termindrucks nicht im Büro unterschrieben.",
+                        rule: "TeKaMoLo-Fehler. 'gestern' (Temporal) muss vor 'wegen des Termindrucks' (Kausal) stehen. Die Negation 'nicht' steht vor dem zweiten Prädikatsteil.",
+                    },
+                    {
+                        incorrect: "Ich habe dem neuen Praktikanten die Vorgehensweise sofort erklärt und er hat sie nicht verstanden.",
+                        correct: "Ich habe dem neuen Praktikanten sofort die Vorgehensweise erklärt und er hat sie nicht verstanden.",
+                        rule: "Adverbialbestimmungen stehen im Mittelfeld. Pronominale Objekte (ihn/ihr/sie) kommen vor nominalen Objekten, aber Adverbien (sofort) stehen typischerweise vor Akkusativ-Objekten (die Vorgehensweise).",
+                    },
+                    {
+                        incorrect: "Obwohl der Kunde die Ware dringend braucht, können wir sie nicht versenden heute.",
+                        correct: "Obwohl der Kunde die Ware dringend braucht, können wir sie heute nicht versenden.",
+                        rule: "Im Hauptsatz steht das zweite Verb (versenden) am Ende. Adverbien (heute) kommen meist vor der Negation 'nicht'.",
+                    },
+                    {
+                        incorrect: "Wir bitten Sie, die Rechnung unverzüglich uns per E-Mail zu senden.",
+                        correct: "Wir bitten Sie, uns die Rechnung unverzüglich per E-Mail zu senden.",
+                        rule: "Pronomen (uns) stehen in der Regel vor nominalen Objekten (die Rechnung). Dativ vor Akkusativ.",
+                    },
+                    // Fünf weitere Sätze hier einfügen...
+                ].sort(() => Math.random() - 0.5), // Sätze mischen
+                currentRound: 0,
+                score: 0,
+                correctCount: 0,
+                isChecking: false
+            },
+            konnektorenAdvanced: {
+                id: 2,
+                maxRounds: 10,
+                sentences: [
+                    {
+                        incorrect: "Nachdem die Besprechung war beendet, konnten wir die E-Mails beantworten.",
+                        correct: "Nachdem die Besprechung beendet war, konnten wir die E-Mails beantworten.",
+                        rule: "Verb am Ende im Nebensatz mit Konnektor 'nachdem'. Prädikatstrennung (beendet war).",
+                    },
+                    {
+                        incorrect: "Wenn Sie einen Fehler machen, muss dieser korrigiert werden sofort.",
+                        correct: "Wenn Sie einen Fehler machen, muss dieser sofort korrigiert werden.",
+                        rule: "Im Hauptsatz steht das flektierte Verb (muss) an Position 2 und der Infinitiv (korrigiert werden) am Ende. Adverb (sofort) steht im Mittelfeld.",
+                    },
+                    // ... weitere Sätze ...
+                ].sort(() => Math.random() - 0.5),
+                currentRound: 0, score: 0, correctCount: 0, isChecking: false
+            },
+            passivKonjunktivInferno: {
+                id: 3,
+                maxRounds: 10,
+                sentences: [
+                    {
+                        incorrect: "Der Chef sagte, dass die Berichte heute müssen unbedingt geschrieben werden.",
+                        correct: "Der Chef sagte, dass die Berichte heute unbedingt geschrieben werden müssen.",
+                        rule: "Verb-Endstellung im Nebensatz mit Modalverb-Passiv. Die Hilfsverben 'werden' und 'müssen' stehen beide am Ende. Partizip II ('geschrieben') kommt zuerst.",
+                    },
+                    {
+                        incorrect: "Der Vorgesetzte meinte, man sollte die E-Mail freundlich formulieren.",
+                        correct: "Der Vorgesetzte meinte, dass man die E-Mail freundlich formulieren sollte.",
+                        rule: "Hauptsatz-Nebensatz-Umwandlung (Konjunktiv I / Indikativ). Eingeleitet mit 'dass', Verb 'sollte' am Ende.",
+                    },
+                    // ... weitere Sätze ...
+                ].sort(() => Math.random() - 0.5),
+                currentRound: 0, score: 0, correctCount: 0, isChecking: false
+            }
+        };
+
+        // HILFSFUNKTION FÜR TOLERANTE PRÜFUNG
+        function normalizeAnswer(answer) {
+            return answer.toLowerCase().replace(/\s\s+/g, ' ').trim().replace(/[.,!?;:]/g, ''); // Ignoriert Groß/Klein, doppelte Leerzeichen und Satzzeichen
+        }
+
+        // HAUPTFUNKTIONEN FÜR DIE SPIELSTEUERUNG
+        function showMenu() {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('menuScreen').classList.add('active');
+            document.getElementById('backButton').style.display = 'none';
+        }
+
+        function showGame(gameIdKey) {
+            const gameData = games[gameIdKey];
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            sounds.coin(); // Arcade-Sound
+            
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(gameIdKey).classList.add('active');
+            document.getElementById('backButton').style.display = 'block';
+            
+            // Spiel nur starten/neu laden, wenn es nicht gerade läuft (Spiellogik in restartGame)
+            if (gameData.currentRound === 0) {
+                restartGame(gameData.id);
+            }
+        }
+
+        function updateStats(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            document.getElementById(`score${gameId}`).textContent = gameData.score;
+            document.getElementById(`correct${gameId}`).textContent = gameData.correctCount;
+            document.getElementById(`round${gameId}`).textContent = `${gameData.currentRound + 1}/${gameData.maxRounds}`;
+        }
+
+        function loadSentence(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            
+            if (gameData.currentRound >= gameData.maxRounds) {
+                showGameOver(gameId);
+                return;
+            }
+            
+            const sentenceElement = document.getElementById(`sentence${gameId}`);
+            const inputElement = document.getElementById(`input${gameId}`);
+            const feedbackElement = document.getElementById(`feedback${gameId}`);
+            const checkButton = document.querySelector(`#gameArea${gameId} .btn-check`);
+            const skipButton = document.querySelector(`#gameArea${gameId} .btn-skip`);
+            
+            sentenceElement.textContent = gameData.sentences[gameData.currentRound].incorrect;
+            inputElement.value = '';
+            feedbackElement.style.display = 'none';
+            gameData.isChecking = false;
+            checkButton.disabled = false;
+            skipButton.disabled = false;
+            updateStats(gameId);
+        }
+
+        function checkAnswer(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            if (gameData.isChecking) return;
+            gameData.isChecking = true;
+            
+            const inputElement = document.getElementById(`input${gameId}`);
+            const feedbackElement = document.getElementById(`feedback${gameId}`);
+            const currentSentence = gameData.sentences[gameData.currentRound];
+            
+            const userAnswer = normalizeAnswer(inputElement.value);
+            const correctAnswer = normalizeAnswer(currentSentence.correct);
+            
+            // Entferne alte Feedback-Klassen
+            feedbackElement.className = 'feedback';
+            
+            if (userAnswer === correctAnswer) {
+                // RICHTIG
+                sounds.success();
+                feedbackElement.classList.add('correct');
+                feedbackElement.innerHTML = `**PERFEKT! ✅** Du hast ${gameData.score + 10} Punkte erhalten!<br><div style="font-size:0.5em; color: #99ff99; margin-top: 10px;">${currentSentence.rule}</div>`;
+                gameData.score += 10;
+                gameData.correctCount++;
+            } else {
+                // FALSCH
+                sounds.error();
+                feedbackElement.classList.add('wrong');
+                feedbackElement.innerHTML = `**FALSCH! ❌** Die korrekte Lösung ist:<div class="correct-answer">${currentSentence.correct}</div><div style="font-size:0.5em; color: #ff9999; margin-top: 10px;">Regel: ${currentSentence.rule}</div>`;
+            }
+            
+            // Button-Steuerung
+            const checkButton = document.querySelector(`#gameArea${gameId} .btn-check`);
+            const skipButton = document.querySelector(`#gameArea${gameId} .btn-skip`);
+            checkButton.disabled = true;
+            skipButton.textContent = 'WEITER';
+            skipButton.onclick = () => nextSentence(gameId);
+        }
+
+        function nextSentence(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            gameData.currentRound++;
+            
+            // Nächste Runde laden oder Spiel beenden
+            if (gameData.currentRound < gameData.maxRounds) {
+                const skipButton = document.querySelector(`#gameArea${gameId} .btn-skip`);
+                skipButton.textContent = 'ÜBERSPRINGEN';
+                skipButton.onclick = () => skipSentence(gameId);
+                loadSentence(gameId);
+            } else {
+                showGameOver(gameId);
+            }
+        }
+
+        function skipSentence(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            if (gameData.isChecking) return; // Nicht überspringen, wenn bereits geprüft
+            
+            // Zeige korrekte Lösung und Regel
+            const feedbackElement = document.getElementById(`feedback${gameId}`);
+            const currentSentence = gameData.sentences[gameData.currentRound];
+            feedbackElement.className = 'feedback wrong';
+            feedbackElement.innerHTML = `**ÜBERSPRUNGEN!** Die korrekte Lösung ist:<div class="correct-answer">${currentSentence.correct}</div><div style="font-size:0.5em; color: #ff9999; margin-top: 10px;">Regel: ${currentSentence.rule}</div>`;
+            
+            // Deaktiviere Check-Button, ändere Skip zu Weiter
+            const checkButton = document.querySelector(`#gameArea${gameId} .btn-check`);
+            const skipButton = document.querySelector(`#gameArea${gameId} .btn-skip`);
+            checkButton.disabled = true;
+            skipButton.textContent = 'WEITER';
+            skipButton.onclick = () => nextSentence(gameId);
+            gameData.isChecking = true;
+        }
+
+        function showGameOver(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            document.getElementById(`gameArea${gameId}`).style.display = 'none';
+            document.getElementById(`gameOver${gameId}`).classList.add('show');
+            document.getElementById(`finalScore${gameId}`).textContent = `${gameData.correctCount} / ${gameData.maxRounds}`;
+            document.getElementById(`finalCorrect${gameId}`).textContent = gameData.correctCount;
+        }
+
+        function restartGame(gameId) {
+            const gameData = Object.values(games).find(g => g.id === gameId);
+            
+            // Spielstand zurücksetzen
+            gameData.currentRound = 0;
+            gameData.score = 0;
+            gameData.correctCount = 0;
+            gameData.isChecking = false;
+            // Sätze neu mischen
+            gameData.sentences.sort(() => Math.random() - 0.5);
+            
+            // Ansichten zurücksetzen
+            document.getElementById(`gameOver${gameId}`).classList.remove('show');
+            document.getElementById(`gameArea${gameId}`).style.display = 'block';
+            
+            // Erste Frage laden
+            const skipButton = document.querySelector(`#gameArea${gameId} .btn-skip`);
+            skipButton.textContent = 'ÜBERSPRINGEN';
+            skipButton.onclick = () => skipSentence(gameId);
+            
+            loadSentence(gameId);
+        }
+
+        // Event Listener für den Start des Audios bei Benutzerinteraktion
+        document.addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        });
+
+        // Initialisierung (zeige nur das Menü)
+        showMenu();
+    </script>
